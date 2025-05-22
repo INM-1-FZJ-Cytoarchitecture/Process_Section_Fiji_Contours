@@ -73,7 +73,19 @@ Each ROI name (field `strName` in the struct) must end with one of the following
 * **Priority**: gray (#g,#i) → white (#w) → cerebellum (#c) → outer (#o) clears all.
 * **Overlaps**: ROIs may overlap. The final mask code follows the above fill order and outer-only regions reset to 0.
 
-## 5. Usage
+### Examples of ROI and Species Images
+
+Below are sample images demonstrating correct naming conventions.
+
+![ROI Example](example1.png)
+
+*`example1.png`: Screenshot of an ROI file named `Alouatta_seniculus_1170_011_roi.zip` showing contours with suffixes how the should be named in fiji.*
+
+![Species Example](example2.png)
+
+*`example2.png`: Example TIFF image named `Alouatta_seniculus_1170_011_mask.tif` which will be created in a mask folder (created by the script).*
+
+## 5. Usage. Usage
 
 1. **Check a single specimen**
 
@@ -133,6 +145,6 @@ Each ROI name (field `strName` in the struct) must end with one of the following
   * Fills regions according to ROI suffix rules.
   * Returns a uint8 mask with tissue codes.
 
-Examples: 
+---
 
-
+*Copy and paste this Markdown into your `README.md` to document the toolbox.*
