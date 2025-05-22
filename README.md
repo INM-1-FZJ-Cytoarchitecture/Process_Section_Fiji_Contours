@@ -60,9 +60,8 @@ Alouatta_seniculus_1170/    ← Specimen folder (Specimen ID)
 
 **Key points:**
 
-1. There is only one specimen name (Specimen ID) used everywhere—no separate “rootName.”
-2. The three‐digit ImageID links each Species image to its ROI and Outline files.
-3. Folder and file names must match exactly, including underscores and hyphens.
+1. The three‐digit ImageID links each Species image to its ROI and Outline files.
+2. Folder and file names must match exactly, including underscores and hyphens.
 
 ## 4. ROI Naming & Suffix Rules. ROI Naming & Suffix Rules
 
