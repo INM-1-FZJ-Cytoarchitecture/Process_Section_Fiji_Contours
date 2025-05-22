@@ -36,29 +36,35 @@ A MATLAB suite of functions to verify folder structure and file naming for speci
 
 ## 3. Folder Structure & File Naming
 
-Your specimen data must adhere to the following layout:
+All specimen data lives under a single folder named after the **Specimen ID**. For example:
 
 ```
-rootFolder/  <-- top-level folder (e.g. Alouatta_seniculus_1170)
+Alouatta_seniculus_1170/    ← Specimen folder (Specimen ID)
 ├── Species/
-│   └── <rootName>/
-│       └── <rootName>_<ID>.tif
+│   └── Alouatta_seniculus_1170/
+│       └── Alouatta_seniculus_1170_<ImageID>.tif
 ├── ROI-files/
-│   └── <rootName>_roi/
-│       └── <rootName>_<ID>_roi.zip
+│   └── Alouatta_seniculus_1170_roi/
+│       └── Alouatta_seniculus_1170_<ImageID>_roi.zip
 └── Outlines/
-    └── <rootName>_outlined/
-        └── <rootName>_<ID>_outlined.tif
+    └── Alouatta_seniculus_1170_outlined/
+        └── Alouatta_seniculus_1170_<ImageID>_outlined.tif
 ```
 
-* `<rootName>` must exactly match `rootFolder` name.
-* `<ID>` is a consistent identifier (e.g. `001`, `011`, `A1`).
+* **Specimen ID** (`Alouatta_seniculus_1170`) is both the top‐level folder name and the prefix for all files and subfolders.
+* **ImageID** is always a three‐digit number (e.g. `001`, `011`, `123`).
 * File extensions:
 
-  * Species & Outlines: `.tif`
-  * ROI archives: `.zip`
+  * Species & Outlines images → `.tif`
+  * ROI archives            → `.zip`
 
-## 4. ROI Naming & Suffix Rules
+**Key points:**
+
+1. There is only one specimen name (Specimen ID) used everywhere—no separate “rootName.”
+2. The three‐digit ImageID links each Species image to its ROI and Outline files.
+3. Folder and file names must match exactly, including underscores and hyphens.
+
+## 4. ROI Naming & Suffix Rules. ROI Naming & Suffix Rules
 
 Each ROI name (field `strName` in the struct) must end with one of the following suffixes:
 
@@ -75,15 +81,15 @@ Each ROI name (field `strName` in the struct) must end with one of the following
 
 ### Examples of ROI and Species Images
 
-Below are sample images demonstrating correct naming conventions.
+Below are sample images demonstrating correct naming conventions. Place these files in the same folder as this README:
 
 ![ROI Example](example1.png)
 
-*`example1.png`: Screenshot of an ROI file named `Alouatta_seniculus_1170_011_roi.zip` showing contours with suffixes how the should be named in fiji.*
+*`example1.png`: Screenshot of an ROI file named `Alouatta_seniculus_1170_011_roi.zip` showing contours with suffixes.*
 
 ![Species Example](example2.png)
 
-*`example2.png`: Example TIFF image named `Alouatta_seniculus_1170_011_mask.tif` which will be created in a mask folder (created by the script).*
+*`example2.png`: Example mask image named `Alouatta_seniculus_1170_011_mask.tif` in the mask folder (created by the script within specimen folder).*
 
 ## 5. Usage. Usage
 
@@ -146,4 +152,3 @@ Below are sample images demonstrating correct naming conventions.
   * Returns a uint8 mask with tissue codes.
 
 ---
-
