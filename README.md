@@ -63,7 +63,7 @@ Alouatta_seniculus_1170/    ← Specimen folder (Specimen ID)
 1. The three‐digit ImageID links each Species image to its ROI and Outline files.
 2. Folder and file names must match exactly, including underscores and hyphens.
 
-## 4. ROI Naming & Suffix Rules. ROI Naming & Suffix Rules
+## 4. ROI Naming & Suffix Rules.
 
 Each ROI name (field `strName` in the struct) must end with one of the following suffixes:
 
