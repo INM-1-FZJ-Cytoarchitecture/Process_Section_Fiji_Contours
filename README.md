@@ -1,30 +1,28 @@
-# Batch Processing of multiple Sections
+# Analyze Species Toolbox
 
-Verify that every Species image has a matching ROI archive and Outline, then invoke `process_roi` when all checks pass.
+A MATLAB suite of functions to verify folder structure and file naming for specimen images, read ImageJ ROI files, and generate a labeled tissue mask for gray matter, white matter, and cerebellum.
 
-## 1. General Installation
+---
 
-1. **Clone this repository**  
+## 1. Installation
+
+1. **Clone the repository**
+
    ```bash
    git clone https://github.com/yourusername/analyze-species.git
-
-
-2. **Change into the repository folder**
-
-   ```bash
    cd analyze-species
    ```
-3. **Add this folder to your MATLAB path**
+2. **Add to MATLAB path**
 
    ```matlab
-   addpath(pwd);
+   addpath(pwd);  % current folder
    savepath;
    ```
 
 ## 2. Prerequisites
 
 * **MATLAB** R2020a or later
-* **ReadImageJROI** toolbox, Version **1.18.0.0** by **Dylan Muir**
+* **ReadImageJROI** (v1.18.0.0) by Dylan Muir
 
   1. Download from MATLAB File Exchange:
      [https://www.mathworks.com/matlabcentral/fileexchange/23700-readimagejroi](https://www.mathworks.com/matlabcentral/fileexchange/23700-readimagejroi)
@@ -32,91 +30,106 @@ Verify that every Species image has a matching ROI archive and Outline, then inv
 
      ```matlab
      matlab.addons.install('ReadImageJROI.mltbx');
-     ```
-  3. Add ReadImageJROI to your MATLAB path (adjust the path to where it installed):
-
-     ```matlab
      addpath(fullfile(userpath,'toolbox','ReadImageJROI-1.18.0.0'));
      savepath;
      ```
 
-## 3. Calling the Function
+## 3. Folder Structure & File Naming
 
-Once the repository and ReadImageJROI are on your path, simply call:
-
-```matlab
-analyze_species(rootFolder)
-```
-
-* **rootFolder** : `char` or `string`
-  Absolute path to one specimen’s top‐level folder.
-  **Example:**
-
-  ```matlab
-  analyze_species('C:\Data\Alouatta_seniculus_1170');
-  ```
-
-## 4. Folder Structure & Naming Requirements
-
-Your data must follow exactly this layout:
+Your specimen data must adhere to the following layout:
 
 ```
-rootFolder/
+rootFolder/  <-- top-level folder (e.g. Alouatta_seniculus_1170)
 ├── Species/
 │   └── <rootName>/
-│       ├── <rootName>_<ID>.tif
-│       ├── <rootName>_<ID2>.tif
-│       └── …
+│       └── <rootName>_<ID>.tif
 ├── ROI-files/
 │   └── <rootName>_roi/
-│       ├── <rootName>_<ID>_roi.zip
-│       ├── <rootName>_<ID2>_roi.zip
-│       └── …
+│       └── <rootName>_<ID>_roi.zip
 └── Outlines/
     └── <rootName>_outlined/
-        ├── <rootName>_<ID>_outlined.tif
-        ├── <rootName>_<ID2>_outlined.tif
-        └── …
+        └── <rootName>_<ID>_outlined.tif
 ```
 
-1. **`<rootName>`**
+* `<rootName>` must exactly match `rootFolder` name.
+* `<ID>` is a consistent identifier (e.g. `001`, `011`, `A1`).
+* File extensions:
 
-   * Must be identical to the name of `rootFolder`.
-   * Example: if `rootFolder` is `Alouatta_seniculus_1170`, then `<rootName>` = `Alouatta_seniculus_1170`.
+  * Species & Outlines: `.tif`
+  * ROI archives: `.zip`
 
-2. **`<ID>`**
+## 4. ROI Naming & Suffix Rules
 
-   * A consistent identifier token (e.g. `001`, `002`, … or any fixed string).
-   * Must match across Species, ROI-files, and Outlines.
+Each ROI name (field `strName` in the struct) must end with one of the following suffixes:
 
-3. **File extensions & suffixes**
+| Suffix | Tissue       | Code in mask |
+| ------ | ------------ | ------------ |
+| `#g`   | Gray matter  | 1            |
+| `#i`   | Inner gray   | 1            |
+| `#w`   | White matter | 2            |
+| `#c`   | Cerebellum   | 3            |
+| `#o`   | Outer only   | 0 (cleared)  |
 
-   * **Species** images → `*.tif` named `<rootName>_<ID>.tif`
-   * **ROI-files** archives → `*.zip` named `<rootName>_<ID>_roi.zip`
-   * **Outlines** images → `*.tif` named `<rootName>_<ID>_outlined.tif`
+* **Priority**: gray (#g,#i) → white (#w) → cerebellum (#c) → outer (#o) clears all.
+* **Overlaps**: ROIs may overlap. The final mask code follows the above fill order and outer-only regions reset to 0.
 
-4. **Consistency rules**
+## 5. Usage
 
-   * Folder names and file name prefixes—including underscores—must match exactly.
-   * Every Species image ID must have a corresponding ROI archive and Outline image.
+1. **Check a single specimen**
 
----
+   ```matlab
+   analyze_species(rootFolder);
+   ```
 
-## 5. (Optional) Batch Processing
+   * Verifies folder structure and matching Species⇄ROI⇄Outline files.
+   * Prints summary and warnings.
+   * Calls `process_roi` if all checks pass.
 
-To run `analyze_species` on **all** subfolders of a parent directory:
+2. **Process ROIs & generate mask**
 
-```matlab
-parentDir = 'C:\Data';
-entries   = dir(parentDir);
-for k = 1:numel(entries)
-    if entries(k).isdir && ~ismember(entries(k).name, {'.','..'})
-        analyze_species(fullfile(parentDir, entries(k).name));
-    end
-end
-```
+   ```matlab
+   % After analyze_species has passed
+   results = process_roi(roiPaths, speciesIDs);
+   % roiPaths: cell array of full .zip paths
+   % speciesIDs: matching ID tokens
 
-This loop skips `.` and `..`, then calls the check on each specimen folder automatically.
+   % To obtain mask for a set:
+   mask = create_mask(rois);
+   imshow(mask, []);
+   ```
 
-```
-```
+3. **Batch processing**
+
+   ```matlab
+   parentDir = 'C:\Data';
+   entries = dir(parentDir);
+   for k = 1:numel(entries)
+       name = entries(k).name;
+       if entries(k).isdir && ~ismember(name,{'.','..'})
+           analyze_species(fullfile(parentDir,name));
+       end
+   end
+   ```
+
+## 6. Function Reference
+
+* **`analyze_species(rootFolder)`**
+
+  * Checks required subfolders (`Species`, `ROI-files`, `Outlines`).
+  * Verifies matching file counts and IDs.
+  * Prints summary and warnings.
+  * Calls `process_roi` for ROI processing.
+
+* **`process_roi(roiPaths, speciesIDs)`**
+
+  * Reads each ROI ZIP via `ReadImageJROI`.
+  * Annotates ROI structs with paths and IDs.
+  * Lists contour names in Command Window.
+  * Calls `create_mask` for each set and computes areas via `calculate_areas`.
+
+* **`create_mask(rois)`**
+
+  * Builds an empty mask of the correct image size.
+  * Fills regions according to ROI suffix rules.
+  * Returns a uint8 mask with tissue codes.
+
