@@ -147,4 +147,3 @@ Below are sample images demonstrating correct naming conventions.
 
 ---
 
-*Copy and paste this Markdown into your `README.md` to document the toolbox.*
