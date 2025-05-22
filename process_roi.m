@@ -99,8 +99,8 @@ function results = process_roi(roiPaths, speciesIDs)
         nROIs = numel(rois);
         areas = zeros(1, nROIs);
         for i = 1:nROIs
-            mask     = create_mask(rois(i));
-            areas(i) = calculate_areas(mask);
+            mask     = create_mask(rois);
+            %sareas(i) = calculate_areas(mask);
         end
 
         % Store results

@@ -1,63 +1,93 @@
-function mask = create_mask(roi)
-%CREATE_MASK Generate an empty binary mask matching the corresponding Species image
+function mask = create_mask(rois)
+%CREATE_MASK Generate labeled tissue mask based on ordered ROI suffix priorities
 %
-%   mask = create_mask(roi) reads the TIFF image that corresponds to the
-%   given ROI struct (annotated with rootPath, rootName, speciesID), obtains
-%   its dimensions, and returns a logical mask initialized to false (0)
-%   with the same size. You can then fill in the ROI region as needed.
+%   mask = CREATE_MASK(rois) reads the TIFF image corresponding to the
+%   first ROI in the struct array, determines its dimensions, and returns
+%   a 2D numeric mask where each pixel is coded by tissue type:
+%     1 = gray matter (#g or #i)
+%     2 = white matter (#w)
+%     3 = cerebellum (#c)
+%     0 = background / non-tissue (#o overrides any previous)
 %
-%   Syntax
-%     mask = create_mask(roi)
+%   Priority (fill order):
+%     1) Gray matter (#g, #i)
+%     2) White matter (#w)
+%     3) Cerebellum (#c)
+%     4) Only_outer (#o) — override to 0
 %
-%   Input Arguments
-%     roi : struct  
-%           A single ROI struct returned by ReadImageJROI and annotated with:
-%             • rootPath   – absolute path to the specimen top‐level folder  
-%             • rootName   – name of the specimen folder (e.g. 'Alouatta_seniculus_1170')  
-%             • speciesID  – the ID token matching this ROI (e.g. '011')
+%   Input:
+%     rois : struct array with fields:
+%       • strName       – ROI name ending in one of: #g,#i,#w,#c,#o
+%       • mnCoordinates – N×2 array [x y]
+%       • rootPath      – top-level folder of specimen
+%       • rootName      – specimen folder name
+%       • speciesID     – ID token for image filename
 %
-%   Output Arguments
-%     mask : logical 2D array  
-%            A binary mask of size [height, width] matching the TIFF image,
-%            initialized to false so that all pixels are zero.
+%   Output:
+%     mask : uint8 2D array of size matching the TIFF image
 %
-%   Example
-%     % Suppose roi.rootPath = 'D:\Data\Alouatta_seniculus_1170'
-%     % roi.rootName = 'Alouatta_seniculus_1170'
-%     % roi.speciesID = '011'
-%     mask = create_mask(roi);
-%     % mask is a [H×W] logical array of false values.
+%   Special cases & testing suggestions:
+%     • Overlaps: #o regions nested inside tissue areas should be cleared.
+%     • Inner ROIs (#i) get gray-matter code even if embedded.
+%     • Automate with small shapes: create synthetic rois and assert unique codes.
+%     • Test mask dimensions, unique(mask), and boundary completeness.
 %
-%   Requirements
-%     Folder structure under roi.rootPath must be:
-%       roi.rootPath/
-%       └── Species/
-%           └── roi.rootName/
-%               └── roi.rootName_roi.speciesID.tif
-%
-%   See also ReadImageJROI, imread
+%   See also imread, poly2mask, regionprops
 
-    %% Build full path to the matching Species TIFF image
-    % The image lives in:
-    %   <rootPath>/Species/<rootName>/<rootName>_<speciesID>.tif
-    imageName = sprintf('%s_%s.tif', roi.rootName, roi.speciesID);
-    imagePath = fullfile(...
-        roi.rootPath, ...        % top-level folder
-        'Species', ...           % Species subfolder
-        roi.rootName, ...        % folder named after the specimen
-        imageName ...            % the TIFF filename
-    );
-
-    %% Read the image to determine its dimensions
-    try
-        img = imread(imagePath);  % read the TIFF file into an array
-    catch ME
-        % If reading fails, abort with an error
-        error('create_mask:ImageReadFailed', ...
-              'Could not read image "%s": %s', imagePath, ME.message);
+    %% Validate input
+    if ~isstruct(rois) || isempty(rois)
+        error('create_mask:InvalidInput', 'Expect non-empty struct array of ROIs.');
     end
 
-    %% Initialize a logical mask of zeros with same height & width
-    [height, width, ~] = size(img);  % ignore color channels if present
-    mask = false(height, width);     % create a logical array of all false
+    %% Identify image for sizing
+    meta = rois(1);
+    imageName = sprintf('%s_%s.tif', meta.rootName, meta.speciesID);
+    imagePath = fullfile(meta.rootPath, 'Species', meta.rootName, imageName);
+    img = imread(imagePath);               % may error if missing
+    [h, w, ~] = size(img);
+    mask = zeros(h, w, 'uint8');           % init all zeros
+
+    %% Helper to extract suffix
+    function s = getSuffix(name)
+        tok = regexp(name, '#.$', 'match', 'once');
+        if isempty(tok), error('Invalid ROI name %s', name); end
+        s = tok;
+    end
+
+    %% 1) Gray matter (#g and #i)
+    for i = 1:numel(rois)
+        suf = getSuffix(rois(i).strName);
+        if any(strcmp(suf, {'#g', '#i'}))
+            coords = rois(i).mnCoordinates;
+            pm = poly2mask(coords(:,1), coords(:,2), h, w);
+            mask(pm) = 1;
+        end
+    end
+
+    %% 2) White matter (#w)
+    for i = 1:numel(rois)
+        if strcmp(getSuffix(rois(i).strName), '#w')
+            coords = rois(i).mnCoordinates;
+            pm = poly2mask(coords(:,1), coords(:,2), h, w);
+            mask(pm) = 2;
+        end
+    end
+
+    %% 3) Cerebellum (#c)
+    for i = 1:numel(rois)
+        if strcmp(getSuffix(rois(i).strName), '#c')
+            coords = rois(i).mnCoordinates;
+            pm = poly2mask(coords(:,1), coords(:,2), h, w);
+            mask(pm) = 3;
+        end
+    end
+
+    %% 4) Only_outer (#o) — override all to zero
+    for i = 1:numel(rois)
+        if strcmp(getSuffix(rois(i).strName), '#o')
+            coords = rois(i).mnCoordinates;
+            pm = poly2mask(coords(:,1), coords(:,2), h, w);
+            mask(pm) = 0;
+        end
+    end
 end
