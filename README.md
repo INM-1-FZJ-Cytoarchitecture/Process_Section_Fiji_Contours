@@ -133,3 +133,6 @@ Each ROI name (field `strName` in the struct) must end with one of the following
   * Fills regions according to ROI suffix rules.
   * Returns a uint8 mask with tissue codes.
 
+Examples: 
+
+
