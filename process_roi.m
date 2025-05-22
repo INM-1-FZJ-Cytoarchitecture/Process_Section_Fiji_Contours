@@ -1,0 +1,84 @@
+function results = process_roi(roiPaths)
+%PROCESS_ROI Load ROI files, list contour names, create masks, and calculate area metrics
+%
+%   results = process_roi(roiPaths) takes a cell array of file paths to
+%   ImageJ ROI ZIP archives, reads each ROI using ReadImageJROI, lists the
+%   names of all contours found in each file, generates binary masks, and
+%   computes area measures. Returns a structured array summarizing results.
+%
+%   Syntax
+%     results = process_roi(roiPaths)
+%
+%   Input Arguments
+%     roiPaths : cell array of char or string  
+%                Absolute paths to one or more ROI ZIP files.  
+%
+%   Output Arguments
+%     results  : struct array with fields  
+%                • filePath  – char: full path to the ROI file  
+%                • numROIs   – integer: number of ROIs read from file  
+%                • areas     – numeric vector: area of each ROI  
+%
+%   Dependencies
+%     • ReadImageJROI (v1.18.0.0) by Dylan Muir  
+%     • create_mask  
+%     • calculate_areas
+
+    %% Input validation
+    if ~iscell(roiPaths) && ~isstring(roiPaths)
+        error('process_roi:InvalidInput', ...
+              'roiPaths must be a cell array of file paths or a string array.');
+    end
+    roiPaths = cellstr(roiPaths);
+
+    %% Prepare output
+    nFiles  = numel(roiPaths);
+    results = struct('filePath', cell(nFiles,1), ...
+                     'numROIs',  cell(nFiles,1), ...
+                     'areas',    cell(nFiles,1));
+
+    %% Process each ROI archive
+    for k = 1:nFiles
+        thisPath         = roiPaths{k};
+        results(k).filePath = thisPath;
+
+        % Read ROI(s)
+        try
+            raw = ReadImageJROI(thisPath);
+            % If returned as cell array, flatten into a struct array
+            if iscell(raw)
+                rois = [raw{:}];
+            else
+                rois = raw;
+            end
+        catch ME
+            warning('process_roi:ReadFailed', ...
+                    'Could not read "%s": %s', thisPath, ME.message);
+            results(k).numROIs = 0;
+            results(k).areas   = [];
+            continue;
+        end
+
+        % How many ROIs?
+        nROIs = numel(rois);
+        results(k).numROIs = nROIs;
+
+        % List ROI names
+        names = {rois.strName};
+        fprintf('In file "%s" found contours:\n', thisPath);
+        for i = 1:nROIs
+            fprintf('  - %s\n', names{i});
+        end
+
+        % Create masks and compute areas
+        areas = zeros(1, nROIs);
+        for i = 1:nROIs
+            mask     = create_mask(rois(i),thisPath);
+            areas(i) = calculate_areas(mask);
+        end
+
+        results(k).areas = areas;
+        fprintf('Processed "%s": %d ROIs, areas = [%s]\n\n', ...
+                thisPath, nROIs, num2str(areas));
+    end
+end
