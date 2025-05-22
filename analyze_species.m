@@ -103,7 +103,7 @@ function analyze_species(rootFolder)
         fprintf('All files matched. Invoking process_roi on %d ROI files...\n', nROI);
         % Build full paths to each ROI file
         roiPaths = fullfile({roiFiles.folder}, {roiFiles.name});
-        process_roi(roiPaths);
+        process_roi(roiPaths,speciesIDs);
     else
         fprintf('Checks failed. process_roi will not be called.\n');
     end
