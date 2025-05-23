@@ -4,14 +4,14 @@ function mask = create_mask(rois)
 %   mask = CREATE_MASK(rois) reads the TIFF image corresponding to the
 %   first ROI in the struct array, determines its dimensions, builds a
 %   labeled mask, and writes the result to disk:
-%     1 = NeocorticalGM (#g or #i)
+%     1 = gray matter (#g or #i)
 %     2 = white matter (#w)
 %     3 = cerebellum (#c)
 %     4 = ArchicorticalGM (#a)
 %     0 = background / non-tissue (#o overrides any previous)
 %
 %   Priority (fill order):
-%     1) NeocorticalGM (#g, #i)
+%     1) Gray matter (#g, #i)
 %     2) ArchicorticalGM (#a)
 %     3) White matter (#w)
 %     4) Cerebellum (#c)
@@ -71,15 +71,6 @@ function mask = create_mask(rois)
             coords = rois(i).mnCoordinates;
             pm = poly2mask(coords(:,1), coords(:,2), h, w);
             mask(pm) = 1;
-        end
-    end
-
-    %% 1) Gray matter (#g)
-    for i = 1:numel(rois)
-        if strcmp(getSuffix(rois(i).strName), '#a')
-            coords = rois(i).mnCoordinates;
-            pm = poly2mask(coords(:,1), coords(:,2), h, w);
-            mask(pm) = 4;
         end
     end
 

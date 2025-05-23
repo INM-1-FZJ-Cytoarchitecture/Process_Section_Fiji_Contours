@@ -1,4 +1,4 @@
-function analyze_species(rootFolder)
+function results=analyze_species(rootFolder)
 %ANALYZE_SPECIES Verify correspondence between Species images, ROI archives, and Outlines
 %
 %   analyze_species(ROOTFOLDER) inspects the folder structure under ROOTFOLDER
