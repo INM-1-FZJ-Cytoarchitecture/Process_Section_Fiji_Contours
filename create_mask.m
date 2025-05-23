@@ -2,8 +2,8 @@ function mask = create_mask(rois)
 %CREATE_MASK Generate labeled tissue mask based on ordered ROI suffix priorities
 %
 %   mask = CREATE_MASK(rois) reads the TIFF image corresponding to the
-%   first ROI in the struct array, determines its dimensions, and returns
-%   a 2D numeric mask where each pixel is coded by tissue type:
+%   first ROI in the struct array, determines its dimensions, builds a
+%   labeled mask, and writes the result to disk:
 %     1 = gray matter (#g or #i)
 %     2 = white matter (#w)
 %     3 = cerebellum (#c)
@@ -19,45 +19,53 @@ function mask = create_mask(rois)
 %     rois : struct array with fields:
 %       • strName       – ROI name ending in one of: #g,#i,#w,#c,#o
 %       • mnCoordinates – N×2 array [x y]
-%       • rootPath      – top-level folder of specimen
-%       • rootName      – specimen folder name
-%       • speciesID     – ID token for image filename
+%       • rootPath      – top-level specimen folder
+%       • rootName      – specimen folder name (Specimen ID)
+%       • speciesID     – three-digit image ID for filename
 %
 %   Output:
 %     mask : uint8 2D array of size matching the TIFF image
 %
-%   Special cases & testing suggestions:
-%     • Overlaps: #o regions nested inside tissue areas should be cleared.
-%     • Inner ROIs (#i) get gray-matter code even if embedded.
-%     • Automate with small shapes: create synthetic rois and assert unique codes.
-%     • Test mask dimensions, unique(mask), and boundary completeness.
+%   Side effects:
+%     - Creates a folder `<rootPath>/masks` if it does not exist.
+%     - Writes the mask image as `<rootName>_<speciesID>_mask.tif`.
+%     - Errors if writing fails.
 %
-%   See also imread, poly2mask, regionprops
+%   See also imread, poly2mask, imwrite
 
     %% Validate input
     if ~isstruct(rois) || isempty(rois)
-        error('create_mask:InvalidInput', 'Expect non-empty struct array of ROIs.');
+        error('create_mask:InvalidInput', ...
+              'Expect non-empty struct array of ROIs.');
     end
 
-    %% Identify image for sizing
+    %% Load the first image to get dimensions
     meta = rois(1);
     imageName = sprintf('%s_%s.tif', meta.rootName, meta.speciesID);
     imagePath = fullfile(meta.rootPath, 'Species', meta.rootName, imageName);
-    img = imread(imagePath);               % may error if missing
+    try
+        img = imread(imagePath);
+    catch ME
+        error('create_mask:ImageReadFailed', ...
+              'Could not read image "%s": %s', imagePath, ME.message);
+    end
     [h, w, ~] = size(img);
-    mask = zeros(h, w, 'uint8');           % init all zeros
+
+    %% Initialize mask
+    mask = zeros(h, w, 'uint8');  % all zeros (background)
 
     %% Helper to extract suffix
     function s = getSuffix(name)
         tok = regexp(name, '#.$', 'match', 'once');
-        if isempty(tok), error('Invalid ROI name %s', name); end
+        if isempty(tok)
+            error('create_mask:InvalidName', 'Invalid ROI name "%s".', name);
+        end
         s = tok;
     end
 
-    %% 1) Gray matter (#g and #i)
+    %% 1) Gray matter (#g)
     for i = 1:numel(rois)
-        suf = getSuffix(rois(i).strName);
-        if any(strcmp(suf, {'#g', '#i'}))
+        if strcmp(getSuffix(rois(i).strName), '#g')
             coords = rois(i).mnCoordinates;
             pm = poly2mask(coords(:,1), coords(:,2), h, w);
             mask(pm) = 1;
@@ -82,12 +90,37 @@ function mask = create_mask(rois)
         end
     end
 
-    %% 4) Only_outer (#o) — override all to zero
+    %% 4) Inner gray matter (#i)
+    for i = 1:numel(rois)
+        if strcmp(getSuffix(rois(i).strName), '#i')
+            coords = rois(i).mnCoordinates;
+            pm = poly2mask(coords(:,1), coords(:,2), h, w);
+            mask(pm) = 1;
+        end
+    end
+
+    %% 5) Only_outer (#o) — override all to zero
     for i = 1:numel(rois)
         if strcmp(getSuffix(rois(i).strName), '#o')
             coords = rois(i).mnCoordinates;
             pm = poly2mask(coords(:,1), coords(:,2), h, w);
             mask(pm) = 0;
         end
+    end
+
+    %% Write mask to disk
+    maskFolder = fullfile(meta.rootPath, 'masks');
+    if ~isfolder(maskFolder)
+        mkdir(maskFolder);
+    end
+    [~, baseName, ~] = fileparts(imageName);
+    maskName = sprintf('%s_mask.tif', baseName);
+    maskPath = fullfile(maskFolder, maskName);
+
+    try
+        imwrite(mask, maskPath, 'tif');
+    catch ME
+        error('create_mask:WriteFailed', ...
+              'Could not write mask to "%s": %s', maskPath, ME.message);
     end
 end

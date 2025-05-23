@@ -1,84 +1,130 @@
-function results = process_roi(roiPaths)
-%PROCESS_ROI Load ROI files, list contour names, create masks, and calculate area metrics
+function results = process_roi(roiPaths, speciesIDs)
+%PROCESS_ROI Load ROI files, extract ImageIDs, list contours, create masks, and calculate areas
 %
-%   results = process_roi(roiPaths) takes a cell array of file paths to
-%   ImageJ ROI ZIP archives, reads each ROI using ReadImageJROI, lists the
-%   names of all contours found in each file, generates binary masks, and
-%   computes area measures. Returns a structured array summarizing results.
+%   results = process_roi(roiPaths, speciesIDs) takes:
+%     • roiPaths    : cell array of full paths to ROI ZIP files
+%     • speciesIDs  : cell array of three-digit ID strings (e.g. {'001','011', …})
 %
-%   Syntax
-%     results = process_roi(roiPaths)
+%   For each ROI archive, it:
+%     1. Extracts the three-digit ImageID from the ZIP filename.
+%     2. Validates that ImageID is in speciesIDs.
+%     3. Reads the ROIs via ReadImageJROI.
+%     4. Annotates ROI structs with paths, rootName, and ImageID.
+%     5. Lists contour names.
+%     6. Calls create_mask on the ROI set.
+%     7. Calculates areas via calculate_areas.
 %
-%   Input Arguments
-%     roiPaths : cell array of char or string  
-%                Absolute paths to one or more ROI ZIP files.  
-%
-%   Output Arguments
-%     results  : struct array with fields  
-%                • filePath  – char: full path to the ROI file  
-%                • numROIs   – integer: number of ROIs read from file  
-%                • areas     – numeric vector: area of each ROI  
-%
-%   Dependencies
-%     • ReadImageJROI (v1.18.0.0) by Dylan Muir  
-%     • create_mask  
-%     • calculate_areas
+%   Returns a struct array results(k) with fields:
+%     • filePath   – ROI ZIP path
+%     • speciesID  – three-digit ImageID
+%     • numROIs    – number of ROIs in file
+%     • areas      – vector of computed areas
 
     %% Input validation
     if ~iscell(roiPaths) && ~isstring(roiPaths)
-        error('process_roi:InvalidInput', ...
-              'roiPaths must be a cell array of file paths or a string array.');
+        error('process_roi:InvalidInput', 'roiPaths must be a cell or string array.');
     end
-    roiPaths = cellstr(roiPaths);
+    if ~iscell(speciesIDs) && ~isstring(speciesIDs)
+        error('process_roi:InvalidInput', 'speciesIDs must be a cell or string array.');
+    end
+    roiPaths   = cellstr(roiPaths);
+    speciesIDs = cellstr(speciesIDs);
 
-    %% Prepare output
-    nFiles  = numel(roiPaths);
-    results = struct('filePath', cell(nFiles,1), ...
-                     'numROIs',  cell(nFiles,1), ...
-                     'areas',    cell(nFiles,1));
+    nFiles = numel(roiPaths);
+    results = struct('filePath',  cell(nFiles,1), ...
+        'speciesID', cell(nFiles,1), ...
+        'numROIs',   cell(nFiles,1), ...
+        'areas',     cell(nFiles,1)  ...
+    );
 
-    %% Process each ROI archive
+    %% Loop over ROI archives
     for k = 1:nFiles
-        thisPath         = roiPaths{k};
+        thisPath = roiPaths{k};
         results(k).filePath = thisPath;
 
-        % Read ROI(s)
-        try
-            raw = ReadImageJROI(thisPath);
-            % If returned as cell array, flatten into a struct array
-            if iscell(raw)
-                rois = [raw{:}];
-            else
-                rois = raw;
-            end
-        catch ME
-            warning('process_roi:ReadFailed', ...
-                    'Could not read "%s": %s', thisPath, ME.message);
-            results(k).numROIs = 0;
-            results(k).areas   = [];
+        % 1) Extract three-digit ImageID from filename
+        [~, fname] = fileparts(thisPath);  %# e.g. 'SpecimenID_011_roi'
+        tok = regexp(fname, '^.+_(\d{3})_roi$', 'tokens', 'once');
+        if isempty(tok)
+            warning('process_roi:BadFilename', 'Cannot parse ImageID from "%s". Skipping.', fname);
+            continue;
+        end
+        sid = tok{1};
+        results(k).speciesID = sid;
+
+        % 2) Check ImageID in list
+        if ~any(strcmp(speciesIDs, sid))
+            warning('process_roi:IDNotFound', 'ImageID "%s" not in speciesIDs. Skipping.', sid);
             continue;
         end
 
-        % How many ROIs?
-        nROIs = numel(rois);
-        results(k).numROIs = nROIs;
+        % 3) Read ROIs
+        try
+            raw = ReadImageJROI(thisPath);
+        catch ME
+            warning('process_roi:ReadFailed', 'Failed to read "%s": %s', thisPath, ME.message);
+            continue;
+        end
+        if iscell(raw), rois = [raw{:}]; else rois = raw; end
 
-        % List ROI names
+        % 4) Annotate ROIs
+        zipFolder  = fileparts(thisPath);
+        parentDir  = fileparts(zipFolder);
+        rootFolder = fileparts(parentDir);
+        [~, rootName] = fileparts(rootFolder);
+        for i = 1:numel(rois)
+            rois(i).rootPath   = rootFolder;
+            rois(i).roiPath    = thisPath;
+            rois(i).rootName   = rootName;
+            rois(i).speciesID  = sid;
+        end
+
+        % 5) List contours
         names = {rois.strName};
-        fprintf('In file "%s" found contours:\n', thisPath);
-        for i = 1:nROIs
-            fprintf('  - %s\n', names{i});
+        % fprintf('In "%s" (ID=%s) found contours:\n', thisPath, sid);
+        % fprintf('  - %s\n', names{:});
+
+        % 6) Create mask
+        try
+            mask = create_mask(rois);
+        catch ME
+            warning('process_roi:MaskFailed', 'Mask creation failed for "%s": %s', fname, ME.message);
+            continue;
         end
 
-        % Create masks and compute areas
-        areas = zeros(1, nROIs);
-        for i = 1:nROIs
-            mask     = create_mask(rois(i));
-            areas(i) = calculate_areas(mask);
-        end
+        % % 7) Compute areas
+         nROIs = numel(rois);
+         areas = zeros(1, nROIs);
+        % %for i = 1:nROIs
+        %     try
+        %         areas(i) = calculate_areas(rois);
+        %     catch
+        %     % catch ME
+        %     %     warning('process_roi:AreaFailed', 'Area calc failed for ROI %d in "%s": %s', i, thisPath, ME.message);
+        %     %     areas(i) = NaN;
+        %     end
+        % %end
 
-        results(k).areas = areas;
-        fprintf('Processed "%s": %d ROIs, areas = [%s]\n\n', ...
-                thisPath, nROIs, num2str(areas));
+        results(k).numROIs = nROIs;
+        results(k).areas   = areas;
+        fprintf('Processed "%s": %d ROIs → areas = [%s]\n\n', thisPath, nROIs, num2str(areas));
     end
+    % Assuming `results` is the output of process_roi(...)
+    disp(['Summary species: ' ])
+
+    for k = 1:numel(results)
+        fname = results(k).filePath;
+        sid   = results(k).speciesID;
+        n     = results(k).numROIs;
+        vals  = results(k).areas;
+    
+        if isempty(n) || n == 0
+            fprintf('%s\t%s\tWarning: no ROIs found\n', fname, sid);
+        else
+            % print values as comma-separated list
+            valstr = strjoin(string(vals), ', ');
+            fprintf('%s\t%s\t[%s]\n', fname, sid, valstr);
+        end
+    end
+
 end

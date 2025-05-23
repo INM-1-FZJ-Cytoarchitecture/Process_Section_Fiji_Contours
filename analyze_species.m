@@ -100,10 +100,11 @@ function analyze_species(rootFolder)
 
     %% If all checks pass, invoke PROCESS_ROI
     if isempty(missingROI) && isempty(missingOutline)
-        fprintf('All files matched. Invoking process_roi on %d ROI files...\n', nROI);
+        fprintf('All files matched. Invoking process_roi on %d ROI files...\n\n', nROI);
         % Build full paths to each ROI file
         roiPaths = fullfile({roiFiles.folder}, {roiFiles.name});
-        process_roi(roiPaths,speciesIDs);
+        results=process_roi(roiPaths,speciesIDs);
+        disp('============================================================');
     else
         fprintf('Checks failed. process_roi will not be called.\n');
     end
