@@ -120,7 +120,7 @@ function results = process_roi(roiPaths, speciesIDs, debug_mode)
             end
             areas = struct();
         end
-
+        nROIs=size(rois,2);
         results(k).numROIs = nROIs;
         results(k).areas   = areas;
 
