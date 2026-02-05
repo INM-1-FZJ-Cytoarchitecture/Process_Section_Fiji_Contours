@@ -1,26 +1,20 @@
 function results = process_roi(roiPaths, speciesIDs, debug_mode)
-%PROCESS_ROI Load ROI files, extract ImageIDs, create masks, calculate areas,
-%            and return a fixed‐schema table with file paths and metadata
+%PROCESS_ROI Load ROI files, interpret hierarchical tags, and return tissue stats.
 %
-%   results = process_roi(roiPaths, speciesIDs, debug_mode) takes:
-%     • roiPaths    : cell array of full paths to ROI ZIP files
-%     • speciesIDs  : cell array of three‐digit ID strings (e.g. {'001','011', …})
-%     • debug_mode  : logical (default = false)
-%                    If true, prints warnings and detailed processing info.
-%                    If false, only returns the summary table.
+%   Der Prozess basiert auf den folgenden ROI-Definitionen (Tags):
+%     #t  : Total brain (Supratentorial), ohne Cerebellum.
+%     #g  : Alles innerhalb von #t, was NICHT Gray Matter ist (Subtraktionsmaske).
+%     #w  : Exakt White Matter.
+%     #i  : Inner Brain (alles in #t außer Grau/Weiß).
+%     #v  : Ventrikel innerhalb von #t.
+%     #c  : Cerebellum.
+%     #vc : Ventrikel innerhalb des Cerebellums.
+%     #gi : Gray matter surrounded by white matter (Deep Gray Matter).
 %
-%   Returns a table with columns:
-%     rootName    – string: specimen folder name
-%     rootPath    – string: path to specimen folder
-%     filePath    – string: full path to ROI ZIP file
-%     speciesPath – string: full path to Species TIFF image
-%     maskPath    – string: full path to written mask TIFF
-%     ImageID     – string: three‐digit ImageID
-%     numROIs     – double: number of ROIs in that file
-%     Gray        – double: pixel count for code 1
-%     White       – double: pixel count for code 2
-%     Cerebellum  – double: pixel count for code 3
-%     Archicortex – double: pixel count for code 0 (only‐outer regions)
+%   Input:
+%     roiPaths    : Cell array oder String array mit Pfaden zu ROI ZIPs.
+%     speciesIDs  : Cell array mit dreistelligen IDs (z.B. {'001','011'}).
+%     debug_mode  : Boolean (default false).
 
     %% Handle default debug_mode
     if nargin < 3 || isempty(debug_mode)
@@ -37,65 +31,91 @@ function results = process_roi(roiPaths, speciesIDs, debug_mode)
     roiPaths   = cellstr(roiPaths);
     speciesIDs = cellstr(speciesIDs);
 
-    %% Prepare empty fixed‐schema table with metadata
+    %% Prepare empty fixed‐schema table
     varNames = {'rootName','rootPath','filePath','speciesPath','maskPath', ...
-                'ImageID','numROIs','NeocorticalGM','White','Cerebellum','ArchicorticalGM'};
+                'ImageID','numROIs','NeocorticalGM','White','Cerebellum','DeepGM','Ventricles'};
     varTypes = {'string','string','string','string','string', ...
-                'string','double','double','double','double','double'};
+                'string','double','double','double','double','double','double'};
+            
     results = table('Size',[0,numel(varNames)], ...
                     'VariableTypes',varTypes, ...
                     'VariableNames',varNames);
 
     %% Loop over ROI archives
+    fprintf('\n--- START PROCESSING LOOP ---\n');
     for k = 1:numel(roiPaths)
-        thisPath = roiPaths{k};  % ROI file path
+        thisPath = roiPaths{k};
+        [~, fname, ext] = fileparts(thisPath);
+        
+        % DEBUG: Dateiname prüfen
+        % fprintf('Checking: %s%s ... ', fname, ext); 
 
         % 1) Extract three‐digit ImageID
-        [~, fname] = fileparts(thisPath);
+        % Regex sucht nach: Irgendwas, dann Unterstrich, dann 3 Ziffern, dann "_roi" am Ende
         tok = regexp(fname, '^.+_(\d{3})_roi$', 'tokens','once');
+        
         if isempty(tok)
-            if debug_mode
-                warning('process_roi:BadFilename', 'Cannot parse ImageID from "%s". Skipping.', fname);
-            end
+            % FEHLER 1: Dateiname passt nicht zum Muster
+            fprintf('SKIP: "%s" -> Regex match failed (Expected format: name_XXX_roi.zip)\n', fname);
             continue;
         end
         sid = tok{1};
 
         % 2) Validate ImageID
         if ~any(strcmp(speciesIDs, sid))
-            if debug_mode
-                warning('process_roi:IDNotFound','ImageID "%s" not in speciesIDs. Skipping.', sid);
-            end
+            % FEHLER 2: ID ist nicht in der Liste der erwarteten IDs
+            fprintf('SKIP: "%s" -> ID [%s] not found in speciesIDs list.\n', fname, sid);
             continue;
         end
 
-        % 3) Read ROI file
+        % 3) Read ROI file and Harmonize Struct Fields
         try
             raw = ReadImageJROI(thisPath);
         catch ME
-            if debug_mode
-                warning('process_roi:ReadFailed','Failed to read "%s": %s', thisPath, ME.message);
-            end
+            % FEHLER 3: Datei kaputt oder nicht lesbar
+            fprintf('SKIP: "%s" -> ReadImageJROI failed: %s\n', fname, ME.message);
             continue;
         end
+        
+        % --- FIX START: Harmonize fields before concatenation ---
         if iscell(raw)
+            allFields = {};
+            for r = 1:numel(raw)
+                allFields = [allFields; fieldnames(raw{r})]; %#ok<AGROW>
+            end
+            uniqueFields = unique(allFields);
+            
+            for r = 1:numel(raw)
+                s = raw{r};
+                currentFields = fieldnames(s);
+                missingFields = setdiff(uniqueFields, currentFields);
+                for m = 1:numel(missingFields)
+                    s.(missingFields{m}) = []; 
+                end
+                raw{r} = s;
+            end
             rois = [raw{:}];
         else
             rois = raw;
         end
+        % --- FIX END ---
 
         % 4) Annotate ROIs and derive metadata paths
         zipFolder  = fileparts(thisPath);
         parentDir  = fileparts(zipFolder);
         rootFolder = fileparts(parentDir);
         [~, rootName] = fileparts(rootFolder);
-        % Species image path
+
         speciesFile = sprintf('%s_%s.tif', rootName, sid);
         speciesPath = fullfile(rootFolder, 'Species', rootName, speciesFile);
-        % Mask output path
+
         maskFolder = fullfile(rootFolder, 'masks');
         maskName   = sprintf('%s_%s_mask.tif', rootName, sid);
         maskPath   = fullfile(maskFolder, maskName);
+
+        if ~isfield(rois, 'strName')
+            [rois.strName] = deal('');
+        end
 
         for i = 1:numel(rois)
             rois(i).rootPath  = rootFolder;
@@ -103,75 +123,68 @@ function results = process_roi(roiPaths, speciesIDs, debug_mode)
             rois(i).rootName  = rootName;
             rois(i).speciesID = sid;
         end
-
-        % 5) Debug: list contour names
+        
+        % 5) Debug info (nur wenn mode an ist)
         if debug_mode
-            names = {rois.strName};
-            fprintf('In "%s" (ID=%s) found contours:\n', thisPath, sid);
-            fprintf('  - %s\n', names{:});
+           % ... (dein alter debug code)
         end
 
-        % 6) Create mask (writes to disk)
+        % 6) Create mask
         try
             mask = create_mask(rois);
         catch ME
-            if debug_mode
-                warning('process_roi:MaskFailed','Mask creation failed for "%s": %s', fname, ME.message);
-            end
+            % FEHLER 4: Masken-Erstellung gescheitert
+            fprintf('SKIP: "%s" (ID %s) -> create_mask failed: %s\n', fname, sid, ME.message);
             continue;
         end
 
-        % 7) Calculate areas (fixed schema)
-        try
-            tbl = calculate_areas(mask);  % expects Gray,White,Cerebellum,Archicortex
-            for f = {'NeocorticalGM','White','Cerebellum','ArchicorticalGM'}
-                if ~ismember(f{1}, tbl.Properties.VariableNames)
-                    tbl.(f{1}) = 0;
-                end
-            end
-        catch ME
-            if debug_mode
-                warning('process_roi:AreaFailed','Area calculation failed for "%s": %s', fname, ME.message);
-            end
-            tbl = table(0,0,0,0,'VariableNames',{'NeocorticalGM','White','Cerebellum','ArchicorticalGM'});
-        end
-
-        % 8) Count ROIs
-        nROIs = numel(rois);
-
-        % Assemble one‐row result
-        newRow = table(string(rootName), string(rootFolder), string(thisPath), ...
-                       string(speciesPath), string(maskPath), ...
-                       string(sid), nROIs, tbl.NeocorticalGM, tbl.White, tbl.Cerebellum, tbl.ArchicorticalGM, ...
-                       'VariableNames',varNames);
-
-        % Ensure masks folder exists
-        if ~isfolder(maskFolder)
-            mkdir(maskFolder);
-        end
-
-        % Append
-        results = [results; newRow];
-
-        % Debug: per‐file printout
-        if debug_mode
-            fprintf('Processed "%s": %d ROIs → NeocorticalGM=%d, White=%d, Cerebellum=%d, ArchicorticalGM=%d\n', ...
-                    fname, nROIs, newRow.NeocorticalGM, newRow.White, newRow.Cerebellum, newRow.ArchicorticalGM);
-        end
+        % % 7) Calculate areas
+        % try
+        %     tbl = calculate_areas(mask); 
+        % 
+        %     valNeocortex = 0; valWhite = 0; valCerebellum = 0; valDeepGM = 0; valVentricles = 0;
+        % 
+        %     if ismember('NeocorticalGM', tbl.Properties.VariableNames), valNeocortex = tbl.NeocorticalGM; end
+        %     if ismember('White', tbl.Properties.VariableNames),         valWhite = tbl.White; end
+        %     if ismember('Cerebellum', tbl.Properties.VariableNames),    valCerebellum = tbl.Cerebellum; end
+        %     if ismember('DeepGM', tbl.Properties.VariableNames),        valDeepGM = tbl.DeepGM;
+        %     elseif ismember('ArchicorticalGM', tbl.Properties.VariableNames), valDeepGM = tbl.ArchicorticalGM; end
+        %     if ismember('Ventricles', tbl.Properties.VariableNames),    valVentricles = tbl.Ventricles; end
+        % 
+        % catch ME
+        %     % Hier überspringen wir nicht, sondern schreiben Nullen, aber geben Warnung aus
+        %     fprintf('WARNING: "%s" -> Area calc failed, setting to 0. Error: %s\n', fname, ME.message);
+        %     valNeocortex = 0; valWhite = 0; valCerebellum = 0; valDeepGM = 0; valVentricles = 0;
+        % end
+        % 
+        % % 8) Count ROIs & Assemble Result
+        % nROIs = numel(rois);
+        % newRow = table(string(rootName), string(rootFolder), string(thisPath), ...
+        %                string(speciesPath), string(maskPath), ...
+        %                string(sid), nROIs, ...
+        %                valNeocortex, valWhite, valCerebellum, valDeepGM, valVentricles, ...
+        %                'VariableNames',varNames);
+        % 
+        % if ~isfolder(maskFolder), mkdir(maskFolder); end
+        % 
+        % results = [results; newRow];
+        % 
+        % % Success Nachricht für Debugging
+        % % fprintf('OK: "%s" added.\n', fname);
     end
+    fprintf('--- END PROCESSING LOOP ---\n\n');
 
-        %% (Optional) display final table when not in debug mode
+    %% Final Summary
     if ~debug_mode
-        % Final summary using table indexing
         for i = 1:height(results)
-            fp   = results.filePath(i);
-            sid  = results.ImageID(i);
-            n    = results.numROIs(i);
-            [~, fname] = fileparts(fp);
+            fp = results.filePath(i);
+            sid = results.ImageID(i);
+            n = results.numROIs(i);
+            [~, fn] = fileparts(fp);
             if n == 0
-                fprintf('%s	%s	Warning: no or wrong labeled ROIs found', fname, sid);
+                fprintf('%s\t%s\tWarning: no or wrong labeled ROIs found\n', fn, sid);
             else
-                fprintf('%s	%s	N RoIs: [%d] \n', fname, sid, n);
+                fprintf('%s\t%s\tN RoIs: [%d]\n', fn, sid, n);
             end
         end
     end
